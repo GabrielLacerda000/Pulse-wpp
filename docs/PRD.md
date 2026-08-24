@@ -1440,3 +1440,122 @@ testes;
 documentação da API.
 
 A API deverá poder ser testada utilizando ferramentas como Postman, Insomnia ou curl.
+
+# 36. Autenticação
+
+O sistema deverá distinguir **autenticação de usuário** de **autenticação entre serviços**.
+
+## 36.1 Autenticação do usuário
+
+A autenticação dos usuários será responsabilidade exclusiva do **Pulse**, utilizando o Laravel Starter Kit já adotado pelo projeto.
+
+O `pulse-wpp` não deverá possuir login, registro ou gerenciamento de usuários no MVP.
+
+Fluxo:
+
+```text
+Usuário
+   ↓
+Pulse
+   ↓
+Laravel Starter Kit
+   ↓
+Usuário autenticado
+```
+
+O `pulse-wpp` não deverá conhecer diretamente a identidade ou as credenciais do usuário autenticado.
+
+---
+
+## 36.2 Autenticação entre Pulse e Pulse WPP
+
+A comunicação entre o Pulse e o `pulse-wpp` deverá ser protegida por uma **API Key**.
+
+Fluxo:
+
+```text
+Pulse
+   │
+   │ Authorization: Bearer <API_KEY>
+   ▼
+pulse-wpp
+```
+
+A chave deverá ser armazenada exclusivamente através de variáveis de ambiente.
+
+### Pulse
+
+```env
+PULSE_WPP_URL=http://localhost:3001
+PULSE_WPP_API_KEY=...
+```
+
+### Pulse WPP
+
+```env
+PULSE_WPP_API_KEY=...
+```
+
+As requisições deverão utilizar:
+
+```http
+Authorization: Bearer <API_KEY>
+```
+
+O `pulse-wpp` deverá rejeitar requisições sem uma API Key válida:
+
+```http
+401 Unauthorized
+```
+
+---
+
+## 36.3 Escopo da autenticação no MVP
+
+O MVP será inicialmente projetado para **uma única sessão de WhatsApp**.
+
+Não será implementado, neste momento, um sistema de múltiplas sessões ou associação entre usuários e sessões do WhatsApp.
+
+Consequentemente, não será necessário possuir no `pulse-wpp` estruturas como:
+
+```text
+user_id
+whatsapp_user_id
+session_user_id
+```
+
+Caso o Pulse seja posteriormente transformado em uma aplicação multiusuário com diferentes contas de WhatsApp, a arquitetura poderá evoluir para suportar múltiplas sessões independentes.
+
+---
+
+## 36.4 QR Code e autenticação do WhatsApp
+
+A autenticação da conta do WhatsApp será realizada pelo próprio WhatsApp através do QR Code gerado pelo provider.
+
+O fluxo será:
+
+```text
+Usuário autenticado no Pulse
+          ↓
+Pulse solicita conexão
+          ↓
+pulse-wpp inicia provider
+          ↓
+Provider gera QR Code
+          ↓
+Pulse obtém QR Code
+          ↓
+Pulse exibe QR Codes
+          ↓
+Usuário escaneia com WhatsApp
+          ↓
+Provider estabelece sessão
+          ↓
+pulse-wpp informa conexão
+          ↓
+Pulse exibe "WhatsApp conectado"
+```
+
+O Pulse será responsável apenas pela **interface e comunicação com o usuário**. A gestão técnica da sessão do WhatsApp permanecerá no `pulse-wpp`.
+
+As credenciais da sessão do WhatsApp deverão permanecer exclusivamente no `pulse-wpp` e nunca deverão ser expostas ao Pulse ou registradas nos logs.
