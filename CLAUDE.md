@@ -11,3 +11,11 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context layout — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Linting
+
+Biome
+
+## Code guidelines
+
+code guidelines lives in `docs/GUIDELINES.md`
