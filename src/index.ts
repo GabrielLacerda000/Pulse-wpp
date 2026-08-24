@@ -11,6 +11,7 @@ const config = loadConfig();
 
 const whatsappProvider = WhatsAppProviderFactory.create(
 	config.whatsapp.provider,
+	config.whatsapp.sessionPath,
 	logger,
 );
 const whatsappConnectionService = new WhatsAppConnectionService(
