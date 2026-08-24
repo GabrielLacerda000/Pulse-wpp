@@ -98,6 +98,28 @@ describe("POST /messages", () => {
 		});
 	});
 
+	it("returns WHATSAPP_AUTH_REQUIRED when the session was logged out", async () => {
+		const { app, provider } = testApp();
+		provider.simulateLogout();
+
+		const res = await app.handle(
+			authedRequest("/messages", {
+				method: "POST",
+				body: JSON.stringify({ phone: "5582999999999", message: "Olá!" }),
+			}),
+		);
+
+		expect(res.status).toBe(401);
+		expect(await res.json()).toEqual({
+			success: false,
+			error: {
+				code: "WHATSAPP_AUTH_REQUIRED",
+				message:
+					"WhatsApp session was logged out. Reconnect with a new QR code.",
+			},
+		});
+	});
+
 	it("returns WHATSAPP_NOT_CONNECTED when disconnected", async () => {
 		const { app } = testApp();
 

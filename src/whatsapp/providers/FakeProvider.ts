@@ -60,4 +60,13 @@ export class FakeProvider implements WhatsAppProvider {
 		this.status = "connected";
 		this.qrCode = null;
 	}
+
+	/**
+	 * Stands in for a real logout event from WhatsApp (PRD §30) — a terminal
+	 * state distinct from a transient disconnect, requiring a fresh QR scan.
+	 */
+	simulateLogout(): void {
+		this.status = "logged_out";
+		this.qrCode = null;
+	}
 }

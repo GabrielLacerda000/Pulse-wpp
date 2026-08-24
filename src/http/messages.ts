@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import {
 	InvalidPhoneError,
 	MessageSendError,
+	WhatsAppAuthRequiredError,
 	WhatsAppNotConnectedError,
 } from "../whatsapp/errors";
 import type { WhatsAppMessageService } from "../whatsapp/services/WhatsAppMessageService";
@@ -18,6 +19,10 @@ export function createMessagesPlugin(service: WhatsAppMessageService) {
 				if (error instanceof InvalidPhoneError) {
 					set.status = 400;
 					return errorEnvelope("INVALID_REQUEST", error.message);
+				}
+				if (error instanceof WhatsAppAuthRequiredError) {
+					set.status = 401;
+					return errorEnvelope("WHATSAPP_AUTH_REQUIRED", error.message);
 				}
 				if (error instanceof WhatsAppNotConnectedError) {
 					set.status = 409;

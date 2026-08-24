@@ -3,6 +3,7 @@ import { createLogger } from "../../logger";
 import {
 	InvalidPhoneError,
 	MessageSendError,
+	WhatsAppAuthRequiredError,
 	WhatsAppNotConnectedError,
 } from "../errors";
 import { FakeProvider } from "../providers/FakeProvider";
@@ -39,6 +40,15 @@ describe("WhatsAppMessageService", () => {
 
 		await expect(service.send("5582999999999", "Olá!")).rejects.toBeInstanceOf(
 			WhatsAppNotConnectedError,
+		);
+	});
+
+	it("reports WHATSAPP_AUTH_REQUIRED when the provider was logged out", async () => {
+		const { service, provider } = testService();
+		provider.simulateLogout();
+
+		await expect(service.send("5582999999999", "Olá!")).rejects.toBeInstanceOf(
+			WhatsAppAuthRequiredError,
 		);
 	});
 

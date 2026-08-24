@@ -50,6 +50,7 @@ export class BaileysProvider implements WhatsAppProvider {
 	constructor(
 		private readonly sessionPath: string,
 		private readonly logger: Logger,
+		private readonly reconnectDelayMs = 2000,
 	) {}
 
 	async connect(): Promise<void> {
@@ -175,6 +176,39 @@ export class BaileysProvider implements WhatsAppProvider {
 			} else {
 				this.status = "disconnected";
 				this.logger.info({ event: "WHATSAPP_DISCONNECTED" });
+				// Runs detached from the "close" event handler; errors are
+				// handled inside the loop itself (retry or give up while
+				// disconnecting), so there is nothing left to reject with.
+				void this.reconnectAfterTransientDisconnect();
+			}
+		}
+	}
+
+	/**
+	 * PRD §30: a transient disconnect (network blip, socket close) must
+	 * resume automatically from the persisted session, with no QR scan,
+	 * retrying with a fixed delay until it succeeds or a manual
+	 * disconnect() cancels it. The initial `Promise.resolve()` yield keeps
+	 * this off the caller's stack so a synchronous status check right after
+	 * the "close" event still observes "disconnected" before the reconnect
+	 * attempt takes over.
+	 */
+	private async reconnectAfterTransientDisconnect(): Promise<void> {
+		await Promise.resolve();
+
+		while (!this.disconnecting && this.status === "disconnected") {
+			this.logger.info({ event: "WHATSAPP_CONNECTING" });
+			try {
+				await this.connect();
+				return;
+			} catch {
+				// connect() already logged PROVIDER_ERROR for this attempt.
+				if (this.disconnecting) {
+					return;
+				}
+				await new Promise((resolve) =>
+					setTimeout(resolve, this.reconnectDelayMs),
+				);
 			}
 		}
 	}

@@ -23,6 +23,7 @@ let fakeSocket: {
 let handlers: Record<string, (payload: unknown) => void>;
 let savedCreds: number;
 let endCalls: number;
+let remainingSocketFailures = 0;
 
 function emitConnectionUpdate(update: ConnectionUpdate) {
 	handlers["connection.update"]?.(update);
@@ -30,7 +31,13 @@ function emitConnectionUpdate(update: ConnectionUpdate) {
 
 mock.module("@whiskeysockets/baileys", () => ({
 	__esModule: true,
-	default: () => fakeSocket,
+	default: () => {
+		if (remainingSocketFailures > 0) {
+			remainingSocketFailures--;
+			throw new Error("socket setup failed");
+		}
+		return fakeSocket;
+	},
 	DisconnectReason: { loggedOut: 401 },
 	fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0] }),
 	useMultiFileAuthState: async () => ({
@@ -56,6 +63,7 @@ describe("BaileysProvider", () => {
 		handlers = {};
 		savedCreds = 0;
 		endCalls = 0;
+		remainingSocketFailures = 0;
 		fakeSocket = {
 			ev: {
 				on: (event, handler) => {
@@ -175,6 +183,28 @@ describe("BaileysProvider", () => {
 		await expect(stat(sessionPath)).rejects.toThrow();
 	});
 
+	it("does not auto-reconnect after a logout, and requires a fresh connect/QR flow", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		emitConnectionUpdate({
+			connection: "close",
+			lastDisconnect: { error: { output: { statusCode: 401 } } },
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(await provider.getStatus()).toEqual({ status: "logged_out" });
+
+		await provider.connect();
+		emitConnectionUpdate({ qr: "fresh-qr-data" });
+
+		expect(await provider.getStatus()).toEqual({ status: "qr_required" });
+		expect(await provider.getQrCode()).toBe("fresh-qr-data");
+	});
+
 	it("moves to disconnected without clearing the session on a non-logout close", async () => {
 		const provider = new BaileysProvider(sessionPath, silentLogger());
 		await provider.connect();
@@ -188,5 +218,82 @@ describe("BaileysProvider", () => {
 
 		expect(await provider.getStatus()).toEqual({ status: "disconnected" });
 		expect(await stat(sessionPath)).toBeTruthy();
+	});
+
+	it("automatically reconnects using the persisted session after a transient disconnect", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		emitConnectionUpdate({
+			connection: "close",
+			lastDisconnect: { error: { output: { statusCode: 428 } } },
+		});
+
+		// Let the fire-and-forget reconnect run: it re-enters connect(),
+		// which awaits the (mocked) session/version setup before creating a
+		// new socket.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(await provider.getStatus()).toEqual({ status: "connecting" });
+		expect(await provider.getQrCode()).toBeNull();
+
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		expect(await provider.getStatus()).toEqual({
+			status: "connected",
+			phone: "5582999999999",
+		});
+	});
+
+	it("retries the automatic reconnect after a failed attempt", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger(), 0);
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		remainingSocketFailures = 1;
+		emitConnectionUpdate({
+			connection: "close",
+			lastDisconnect: { error: { output: { statusCode: 428 } } },
+		});
+
+		// Yield enough microtasks/timers for: the first (failing) reconnect
+		// attempt, the 0ms backoff, and the second (succeeding) attempt.
+		for (let i = 0; i < 5; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
+		expect(await provider.getStatus()).toEqual({ status: "connecting" });
+		expect(remainingSocketFailures).toBe(0);
+
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		expect(await provider.getStatus()).toEqual({
+			status: "connected",
+			phone: "5582999999999",
+		});
+	});
+
+	it("does not auto-reconnect after a manual disconnect", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+
+		await provider.disconnect();
+		emitConnectionUpdate({
+			connection: "close",
+			lastDisconnect: { error: { output: { statusCode: 428 } } },
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(await provider.getStatus()).toEqual({ status: "disconnected" });
 	});
 });

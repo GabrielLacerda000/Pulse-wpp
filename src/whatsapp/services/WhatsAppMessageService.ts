@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import {
 	InvalidPhoneError,
 	MessageSendError,
+	WhatsAppAuthRequiredError,
 	WhatsAppNotConnectedError,
 } from "../errors";
 import { isValidPhoneNumber } from "../phone";
@@ -28,6 +29,14 @@ export class WhatsAppMessageService {
 		this.logger.info({ event: "MESSAGE_SEND_STARTED", phone });
 
 		const status = await this.provider.getStatus();
+		if (status.status === "logged_out") {
+			this.logger.warn({
+				event: "MESSAGE_SEND_FAILED",
+				phone,
+				reason: "auth_required",
+			});
+			throw new WhatsAppAuthRequiredError();
+		}
 		if (status.status !== "connected") {
 			this.logger.warn({
 				event: "MESSAGE_SEND_FAILED",

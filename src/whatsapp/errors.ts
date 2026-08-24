@@ -12,6 +12,13 @@ export class WhatsAppNotConnectedError extends Error {
 	}
 }
 
+export class WhatsAppAuthRequiredError extends Error {
+	constructor() {
+		super("WhatsApp session was logged out. Reconnect with a new QR code.");
+		this.name = "WhatsAppAuthRequiredError";
+	}
+}
+
 export class MessageSendError extends Error {
 	constructor(reason: string) {
 		super(reason);
