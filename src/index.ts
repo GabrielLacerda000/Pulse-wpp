@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { loadConfig } from "./config/env";
 import { createAuthPlugin } from "./http/auth";
-import { errorEnvelope } from "./http/errors";
+import { createErrorHandlerPlugin } from "./http/errorHandler";
 import { healthPlugin } from "./http/health";
 import { createMessagesPlugin } from "./http/messages";
 import { createWhatsAppPlugin } from "./http/whatsapp";
@@ -27,18 +27,7 @@ const whatsappMessageService = new WhatsAppMessageService(
 );
 
 const app = new Elysia()
-	// RNF08: any error that escapes a route (a WhatsApp/provider failure or
-	// an Elysia validation error) is turned into a stable envelope instead
-	// of taking the HTTP server down.
-	.onError(({ code, error, set }) => {
-		if (code === "VALIDATION") {
-			set.status = 400;
-			return errorEnvelope("INVALID_REQUEST", "Invalid request body.");
-		}
-		logger.error({ event: "PROVIDER_ERROR", error, code });
-		set.status = 500;
-		return errorEnvelope("INTERNAL_ERROR", "An unexpected error occurred.");
-	})
+	.use(createErrorHandlerPlugin(logger))
 	.use(createAuthPlugin(config, logger))
 	.use(healthPlugin)
 	.use(createWhatsAppPlugin(whatsappConnectionService, logger))
