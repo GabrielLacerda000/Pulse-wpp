@@ -9,6 +9,7 @@
     "format": "biome format --write ."
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "elysia": "latest",
     "pino": "^10.3.1"
   },
