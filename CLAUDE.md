@@ -13,8 +13,7 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 Single-context layout — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ## Linting
-
-Biome
+biome is the lint library an has script at `package.json`
 
 ## Code guidelines
 
