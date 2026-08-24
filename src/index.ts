@@ -1,7 +1,15 @@
 import { Elysia } from "elysia";
+import { loadConfig } from "./config/env";
+import { logger } from "./logger";
 
-const app = new Elysia().get("/", () => "Hello Elysia").listen(3000);
+const config = loadConfig();
 
-console.log(
-  `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
-);
+const app = new Elysia()
+	.get("/", () => "Hello Elysia")
+	.listen(config.server.port);
+
+logger.info({
+	event: "SERVICE_STARTED",
+	port: app.server?.port,
+	hostname: app.server?.hostname,
+});
