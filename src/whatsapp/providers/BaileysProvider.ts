@@ -1,4 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import makeWASocket, {
 	type ConnectionState,
 	DisconnectReason,
@@ -46,6 +46,8 @@ export class BaileysProvider implements WhatsAppProvider {
 	private phone: string | undefined;
 	private socket: WASocket | undefined;
 	private disconnecting = false;
+	private credsSaveQueue: Promise<void> = Promise.resolve();
+	private sessionClearQueue: Promise<void> = Promise.resolve();
 
 	constructor(
 		private readonly sessionPath: string,
@@ -63,6 +65,12 @@ export class BaileysProvider implements WhatsAppProvider {
 		this.disconnecting = false;
 
 		try {
+			// A logout right before this connect() may still be clearing the
+			// session directory on disk (rm() is fire-and-forget from the
+			// "close" handler). Waiting for it here stops us from reading the
+			// stale creds mid-delete, which WhatsApp would reject with another
+			// immediate logout and a QR code that never appears.
+			await this.sessionClearQueue;
 			await mkdir(this.sessionPath, { recursive: true, mode: 0o700 });
 			const { state, saveCreds } = await useMultiFileAuthState(
 				this.sessionPath,
@@ -79,7 +87,13 @@ export class BaileysProvider implements WhatsAppProvider {
 			});
 
 			this.socket = socket;
-			socket.ev.on("creds.update", saveCreds);
+			socket.ev.on("creds.update", () => {
+				this.credsSaveQueue = this.credsSaveQueue
+					.then(() => saveCreds())
+					.catch((error) => {
+						this.logger.error({ event: "PROVIDER_ERROR", error });
+					});
+			});
 			socket.ev.on("connection.update", (update) =>
 				this.handleConnectionUpdate(update),
 			);
@@ -127,6 +141,20 @@ export class BaileysProvider implements WhatsAppProvider {
 		}
 
 		try {
+			// Baileys resolves sendMessage() as soon as the WhatsApp relay
+			// server accepts the message, even for numbers with no WhatsApp
+			// account — it still builds a Signal session and hands back a
+			// messageId, but nothing ever reaches a real device. Checking
+			// onWhatsApp() first catches that case explicitly instead of
+			// silently reporting success.
+			const results = await this.socket.onWhatsApp(phone);
+			if (results && !results.some((result) => result.exists)) {
+				return {
+					success: false,
+					error: "Phone number is not registered on WhatsApp.",
+				};
+			}
+
 			const sent = await this.socket.sendMessage(toJid(phone), {
 				text: message,
 			});
@@ -170,7 +198,7 @@ export class BaileysProvider implements WhatsAppProvider {
 			if (loggedOut) {
 				this.status = "logged_out";
 				this.logger.info({ event: "WHATSAPP_LOGGED_OUT" });
-				this.clearSession().catch((clearError) => {
+				this.sessionClearQueue = this.clearSession().catch((clearError) => {
 					this.logger.error({ event: "PROVIDER_ERROR", error: clearError });
 				});
 			} else {
@@ -199,6 +227,12 @@ export class BaileysProvider implements WhatsAppProvider {
 		while (!this.disconnecting && this.status === "disconnected") {
 			this.logger.info({ event: "WHATSAPP_CONNECTING" });
 			try {
+				// Baileys closes the socket with `restartRequired` right after
+				// a QR scan, before the async creds.json write it triggered
+				// has hit disk. Reconnecting immediately re-reads auth state
+				// from disk (see connect()) and would race that write, losing
+				// the freshly-paired session and looping back to a new QR.
+				await this.credsSaveQueue;
 				await this.connect();
 				return;
 			} catch {
@@ -213,7 +247,32 @@ export class BaileysProvider implements WhatsAppProvider {
 		}
 	}
 
+	/**
+	 * A logged-out session accumulates thousands of loose prekey/session/
+	 * app-state-sync files over its lifetime (Baileys never prunes them), so
+	 * recursively deleting the whole directory in place can take minutes on
+	 * Windows (antivirus real-time scanning touches every file). While that
+	 * delete was still running, creds.json — the only file that actually
+	 * marks the session as authenticated — was still on disk, so a retried
+	 * connect() kept reading it and getting rejected as logged_out again
+	 * instead of ever reaching a QR. Renaming the directory away is a single
+	 * atomic, instant filesystem op regardless of file count: connect() sees
+	 * an absent session immediately and starts a fresh one, while the slow
+	 * bulk delete of the old (renamed-aside) directory runs in the
+	 * background without racing the new session's files.
+	 */
 	private async clearSession(): Promise<void> {
-		await rm(this.sessionPath, { recursive: true, force: true });
+		const stalePath = `${this.sessionPath}.stale-${Date.now()}`;
+		try {
+			await rename(this.sessionPath, stalePath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				return;
+			}
+			throw error;
+		}
+		void rm(stalePath, { recursive: true, force: true }).catch((error) => {
+			this.logger.error({ event: "PROVIDER_ERROR", error });
+		});
 	}
 }

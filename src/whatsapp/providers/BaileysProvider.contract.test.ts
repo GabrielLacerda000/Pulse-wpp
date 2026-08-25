@@ -18,6 +18,9 @@ type FakeSocket = {
 		jid: string,
 		content: { text: string },
 	) => Promise<{ key: { id: string } } | undefined>;
+	onWhatsApp: (
+		...phoneNumber: string[]
+	) => Promise<{ jid: string; exists: boolean }[] | undefined>;
 	end: (error: Error | undefined) => void;
 };
 
@@ -56,6 +59,9 @@ runWhatsAppProviderContract("BaileysProvider", async () => {
 		},
 		user: undefined,
 		sendMessage: async () => ({ key: { id: "wa-contract-message" } }),
+		onWhatsApp: async (phoneNumber) => [
+			{ jid: `${phoneNumber}@s.whatsapp.net`, exists: true },
+		],
 		end: () => {},
 	};
 

@@ -18,12 +18,16 @@ let fakeSocket: {
 		jid: string,
 		content: { text: string },
 	) => Promise<{ key: { id: string } } | undefined>;
+	onWhatsApp: (
+		...phoneNumber: string[]
+	) => Promise<{ jid: string; exists: boolean }[] | undefined>;
 	end: (error: Error | undefined) => void;
 };
 let handlers: Record<string, (payload: unknown) => void>;
 let savedCreds: number;
 let endCalls: number;
 let remainingSocketFailures = 0;
+let onWhatsAppExists = true;
 
 function emitConnectionUpdate(update: ConnectionUpdate) {
 	handlers["connection.update"]?.(update);
@@ -64,6 +68,7 @@ describe("BaileysProvider", () => {
 		savedCreds = 0;
 		endCalls = 0;
 		remainingSocketFailures = 0;
+		onWhatsAppExists = true;
 		fakeSocket = {
 			ev: {
 				on: (event, handler) => {
@@ -75,6 +80,9 @@ describe("BaileysProvider", () => {
 				sentMessages.push({ jid, text: content.text });
 				return { key: { id: "wa-message-1" } };
 			},
+			onWhatsApp: async (phoneNumber) => [
+				{ jid: `${phoneNumber}@s.whatsapp.net`, exists: onWhatsAppExists },
+			],
 			end: () => {
 				endCalls++;
 			},
@@ -125,6 +133,7 @@ describe("BaileysProvider", () => {
 		await provider.connect();
 
 		handlers["creds.update"]?.(undefined);
+		await new Promise((resolve) => setImmediate(resolve));
 
 		expect(savedCreds).toBe(1);
 	});
@@ -141,6 +150,22 @@ describe("BaileysProvider", () => {
 		expect(sentMessages).toEqual([
 			{ jid: "5581988888888@s.whatsapp.net", text: "hello" },
 		]);
+	});
+
+	it("fails to send a message to a phone number with no WhatsApp account", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+		onWhatsAppExists = false;
+
+		const result = await provider.sendMessage("5581988888888", "hello");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Phone number is not registered on WhatsApp.",
+		});
+		expect(sentMessages).toEqual([]);
 	});
 
 	it("fails to send a message when not connected", async () => {
