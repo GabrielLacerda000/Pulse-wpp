@@ -28,6 +28,7 @@ let savedCreds: number;
 let endCalls: number;
 let remainingSocketFailures = 0;
 let onWhatsAppExists = true;
+let onWhatsAppJidOverride: string | undefined;
 
 function emitConnectionUpdate(update: ConnectionUpdate) {
 	handlers["connection.update"]?.(update);
@@ -69,6 +70,7 @@ describe("BaileysProvider", () => {
 		endCalls = 0;
 		remainingSocketFailures = 0;
 		onWhatsAppExists = true;
+		onWhatsAppJidOverride = undefined;
 		fakeSocket = {
 			ev: {
 				on: (event, handler) => {
@@ -81,7 +83,10 @@ describe("BaileysProvider", () => {
 				return { key: { id: "wa-message-1" } };
 			},
 			onWhatsApp: async (phoneNumber) => [
-				{ jid: `${phoneNumber}@s.whatsapp.net`, exists: onWhatsAppExists },
+				{
+					jid: onWhatsAppJidOverride ?? `${phoneNumber}@s.whatsapp.net`,
+					exists: onWhatsAppExists,
+				},
 			],
 			end: () => {
 				endCalls++;
@@ -149,6 +154,24 @@ describe("BaileysProvider", () => {
 		expect(result).toEqual({ success: true, messageId: "wa-message-1" });
 		expect(sentMessages).toEqual([
 			{ jid: "5581988888888@s.whatsapp.net", text: "hello" },
+		]);
+	});
+
+	it("sends to the JID onWhatsApp resolves, not one rebuilt from the input phone", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+		// Brazilian 9th-digit ambiguity: the account WhatsApp resolves for
+		// this number is registered under a JID with a different digit count
+		// than the phone we were given.
+		onWhatsAppJidOverride = "558188888888@s.whatsapp.net";
+
+		const result = await provider.sendMessage("5581988888888", "hello");
+
+		expect(result).toEqual({ success: true, messageId: "wa-message-1" });
+		expect(sentMessages).toEqual([
+			{ jid: "558188888888@s.whatsapp.net", text: "hello" },
 		]);
 	});
 

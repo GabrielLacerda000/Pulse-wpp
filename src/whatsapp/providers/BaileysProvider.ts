@@ -78,7 +78,7 @@ export class BaileysProvider implements WhatsAppProvider {
 			const { version } = await fetchLatestBaileysVersion();
 
 			const baileysLogger = this.logger.child({ module: "baileys" });
-			baileysLogger.level = "warn";
+			baileysLogger.level = "trace";
 
 			const socket = makeWASocket({
 				auth: state,
@@ -148,14 +148,22 @@ export class BaileysProvider implements WhatsAppProvider {
 			// onWhatsApp() first catches that case explicitly instead of
 			// silently reporting success.
 			const results = await this.socket.onWhatsApp(phone);
-			if (results && !results.some((result) => result.exists)) {
+			const match = results?.find((result) => result.exists);
+			if (results && !match) {
 				return {
 					success: false,
 					error: "Phone number is not registered on WhatsApp.",
 				};
 			}
 
-			const sent = await this.socket.sendMessage(toJid(phone), {
+			// WhatsApp's own resolution of `phone` (via match.jid) is the
+			// source of truth for the account's real JID — e.g. Brazilian
+			// numbers can be registered under a JID with a different digit
+			// count than the one supplied (the 9th-digit mobile prefix
+			// ambiguity). Rebuilding the JID from the raw input instead would
+			// target a nonexistent device: Baileys still accepts the send and
+			// returns a messageId, but nothing is ever delivered.
+			const sent = await this.socket.sendMessage(match?.jid ?? toJid(phone), {
 				text: message,
 			});
 			if (!sent?.key.id) {
