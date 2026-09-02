@@ -29,6 +29,8 @@ let endCalls: number;
 let remainingSocketFailures = 0;
 let onWhatsAppExists = true;
 let onWhatsAppJidOverride: string | undefined;
+let onWhatsAppExistsByPhone: Record<string, boolean> | undefined;
+let onWhatsAppCalls: string[] = [];
 
 function emitConnectionUpdate(update: ConnectionUpdate) {
 	handlers["connection.update"]?.(update);
@@ -71,6 +73,8 @@ describe("BaileysProvider", () => {
 		remainingSocketFailures = 0;
 		onWhatsAppExists = true;
 		onWhatsAppJidOverride = undefined;
+		onWhatsAppExistsByPhone = undefined;
+		onWhatsAppCalls = [];
 		fakeSocket = {
 			ev: {
 				on: (event, handler) => {
@@ -82,12 +86,15 @@ describe("BaileysProvider", () => {
 				sentMessages.push({ jid, text: content.text });
 				return { key: { id: "wa-message-1" } };
 			},
-			onWhatsApp: async (phoneNumber) => [
-				{
-					jid: onWhatsAppJidOverride ?? `${phoneNumber}@s.whatsapp.net`,
-					exists: onWhatsAppExists,
-				},
-			],
+			onWhatsApp: async (phoneNumber) => {
+				onWhatsAppCalls.push(phoneNumber);
+				return [
+					{
+						jid: onWhatsAppJidOverride ?? `${phoneNumber}@s.whatsapp.net`,
+						exists: onWhatsAppExistsByPhone?.[phoneNumber] ?? onWhatsAppExists,
+					},
+				];
+			},
 			end: () => {
 				endCalls++;
 			},
@@ -188,6 +195,40 @@ describe("BaileysProvider", () => {
 			success: false,
 			error: "Phone number is not registered on WhatsApp.",
 		});
+		expect(sentMessages).toEqual([]);
+	});
+
+	it("retries with the Brazilian 9th digit inserted when the plain number isn't found", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+		onWhatsAppExists = false;
+		onWhatsAppExistsByPhone = { "5581988888888": true };
+
+		const result = await provider.sendMessage("558188888888", "hello");
+
+		expect(result).toEqual({ success: true, messageId: "wa-message-1" });
+		expect(onWhatsAppCalls).toEqual(["558188888888", "5581988888888"]);
+		expect(sentMessages).toEqual([
+			{ jid: "5581988888888@s.whatsapp.net", text: "hello" },
+		]);
+	});
+
+	it("fails to send a message when neither the plain nor the 9th-digit variant is registered", async () => {
+		const provider = new BaileysProvider(sessionPath, silentLogger());
+		await provider.connect();
+		fakeSocket.user = { id: "5582999999999@s.whatsapp.net" };
+		emitConnectionUpdate({ connection: "open" });
+		onWhatsAppExists = false;
+
+		const result = await provider.sendMessage("558188888888", "hello");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Phone number is not registered on WhatsApp.",
+		});
+		expect(onWhatsAppCalls).toEqual(["558188888888", "5581988888888"]);
 		expect(sentMessages).toEqual([]);
 	});
 

@@ -25,6 +25,22 @@ function toJid(phone: string): string {
 	return `${phone}@s.whatsapp.net`;
 }
 
+/**
+ * Brazilian mobile numbers moved from 8 to 9 local digits, and some leads
+ * are still stored under the old 8-digit form. onWhatsApp() resolves the
+ * 9th-digit ambiguity server-side when it can, but a query for the bare
+ * 8-digit string sometimes comes back with no match at all even though the
+ * account exists under the 9-digit form — this reconstructs that variant
+ * (country code 55 + 2-digit DDD + 8 local digits, 12 digits total) so
+ * sendMessage() can retry it before giving up.
+ */
+function withBrazilianNinthDigit(phone: string): string | undefined {
+	if (!/^55\d{10}$/.test(phone)) {
+		return undefined;
+	}
+	return `${phone.slice(0, 4)}9${phone.slice(4)}`;
+}
+
 function getDisconnectStatusCode(error: unknown): number | undefined {
 	if (error && typeof error === "object" && "output" in error) {
 		const output = (error as { output?: { statusCode?: unknown } }).output;
@@ -148,12 +164,19 @@ export class BaileysProvider implements WhatsAppProvider {
 			// onWhatsApp() first catches that case explicitly instead of
 			// silently reporting success.
 			const results = await this.socket.onWhatsApp(phone);
-			const match = results?.find((result) => result.exists);
+			let match = results?.find((result) => result.exists);
 			if (results && !match) {
-				return {
-					success: false,
-					error: "Phone number is not registered on WhatsApp.",
-				};
+				const ninthDigitVariant = withBrazilianNinthDigit(phone);
+				const retryResults = ninthDigitVariant
+					? await this.socket.onWhatsApp(ninthDigitVariant)
+					: undefined;
+				match = retryResults?.find((result) => result.exists);
+				if (!match) {
+					return {
+						success: false,
+						error: "Phone number is not registered on WhatsApp.",
+					};
+				}
 			}
 
 			// WhatsApp's own resolution of `phone` (via match.jid) is the

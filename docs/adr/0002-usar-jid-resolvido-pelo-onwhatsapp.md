@@ -81,3 +81,26 @@ do servidor via `onWhatsApp()`; o bug era simplesmente descartar esse dado.
 2. Remover (ou adaptar) o teste "sends to the JID onWhatsApp resolves, not
    one rebuilt from the input phone" em `BaileysProvider.test.ts`.
 3. Rodar `bun test` para confirmar que a suíte ainda passa.
+
+## Addendum (2026-09-02): a premissa de "sem fallback client-side" não se sustentou
+
+Numa campanha real, 4 leads brasileiros cadastrados sem o 9º dígito (formato
+antigo de 8 dígitos locais) falharam com
+`"Phone number is not registered on WhatsApp."`, mesmo com contas WhatsApp
+ativas confirmadas por fora. Ou seja: ao contrário do que esta ADR assumia,
+`onWhatsApp()` consultado só com a string de 8 dígitos **nem sempre** resolve
+a ambiguidade do 9º dígito do lado do servidor — às vezes simplesmente não
+acha nenhum resultado, em vez de devolver o `jid` da variante de 9 dígitos.
+
+Isso é um caso diferente do bug original desta ADR (lá `onWhatsApp()` achava
+um resultado, só com `jid` de contagem de dígitos diferente; aqui ele não
+acha resultado nenhum para a consulta de 8 dígitos).
+
+Foi adicionado um fallback client-side restrito em
+`BaileysProvider.sendMessage()`: quando `onWhatsApp(phone)` não encontra
+nada e `phone` bate no padrão BR de 12 dígitos sem o 9
+(`55` + DDD + 8 dígitos locais), o código tenta de novo com o 9 inserido
+(`withBrazilianNinthDigit()`) antes de reportar falha. Só cobre essa direção
+(faltando o 9); não tenta remover um 9 "sobrando" nem lida com outros
+países. Testes novos em `BaileysProvider.test.ts` cobrem o retry
+bem-sucedido e o caso de controle em que nenhuma das duas variantes existe.
