@@ -280,5 +280,5 @@ não simula queda de socket nem logout via HTTP. Passo a passo:
   simultaneamente na mesma pasta de sessão; se precisar, use
   `WHATSAPP_SESSION_PATH` diferentes em `.env` separados.
 - Depois de validar tudo manualmente, `bun test` roda a suíte automatizada
-  (73 testes) cobrindo os mesmos fluxos sem depender de WhatsApp real —
+  (80 testes) cobrindo os mesmos fluxos sem depender de WhatsApp real —
   útil pra checar regressão rápido sem repetir todo esse passo a passo.

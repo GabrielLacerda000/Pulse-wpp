@@ -17,7 +17,7 @@ biome is the lint library an has script at `package.json`
 
 ## Code guidelines
 
-code guidelines lives in `docs/GUIDELINES.md`
+code guidelines lives in `docs/code-guidelines.md`
 
 ## Logging
 pino is the logging library

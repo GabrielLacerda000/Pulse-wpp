@@ -12,7 +12,7 @@ comportamento de resiliência que o Pulse precisa saber lidar.
 
 ## 1. O que funciona hoje
 
-Implementado e testado (73 testes automatizados, `bun test`):
+Implementado e testado (80 testes automatizados, `bun test`):
 
 - Health check público.
 - Autenticação por API Key em todas as demais rotas.
@@ -24,7 +24,7 @@ Implementado e testado (73 testes automatizados, `bun test`):
   toda falha vira uma resposta JSON com código estável.
 
 **Ainda não implementado neste repo** (é responsabilidade do Pulse, por
-design — ver `docs/GUIDELINES.md` §25): fila de mensagens, intervalo entre
+design — ver `docs/code-guidelines.md` §25): fila de mensagens, intervalo entre
 envios, campanhas, controle de concorrência, histórico de mensagens,
 variáveis de mensagem, seleção de contatos. O `pulse-wpp` é só o gateway —
 "WhatsApp, Connection, Message, Provider", nada de lógica de negócio.
